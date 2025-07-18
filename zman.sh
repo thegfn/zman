@@ -35,8 +35,8 @@ Commands:
   snapshot
     take     --dataset <pool/dataset> [--name <snapname>] [--date]
              → Create a snapshot manually or with date-based naming
-    prune    --dataset <pool/dataset> --days <N>
-             → Prune snapshots older than N days
+    prune    --dataset <pool/dataset> --days <N> / --keep-last <N>
+             → Prune snapshots older than N days / keep the last N snapshots
 
   send
     --dataset <pool/dataset>

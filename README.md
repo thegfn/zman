@@ -1,64 +1,64 @@
 # ZMAN - ZFS Management Toolkit
 
-ZMAN is a modular, extensible Bash-based toolkit for managing ZFS datasets, zpools, replication, snapshotting, and health reporting across local and remote systems. It was designed to make ZFS management a little easier with additional safeguards.
+ZMAN is a modular, extensible Bash-based toolkit for managing ZFS datasets, zpools, replication, snapshotting, and health reporting across local and remote systems. It simplifies ZFS management with additional automation, safety features, and reporting tools.
 
 ---
 
-## Features
+## 🚀 Features
 
 - Modular CLI subcommands for managing datasets and zpools
-- Snapshot automation with date-based naming and retention
-- Incremental or full send/receive (local or remote) with `mbuffer` support
-- Replication plans via config file
+- Snapshot creation with date-based naming and automated pruning
+- Incremental or full `zfs send/receive` (local or remote) with `mbuffer` support
+- Auto-detects base snapshots for incremental replication
+- Plan-based replication via `plans/replication.conf`
 - Pool health, SMART, capacity, and snapshot bloat reporting
-- Interactive safety confirmations for destructive actions
-- Supports air-gapped backup workflows via file-based streams
-- **Dry runs** can be executed on any command or subcommand to see what would have happened with `--dry-run` flag
+- Interactive confirmations for destructive actions
+- Supports air-gapped backups with file-based transfers
+- **Dry runs** for previewing all destructive or transfer operations using `--dry-run`
 
 ---
 
-## Requirements
+## 📦 Requirements
 
-- Bash ≥ 4.0
-- ZFS utilities (e.g. `zfs`, `zpool`)
-- `mbuffer` (optional, for fast pipelined send/receive)
-- `smartctl` (optional, for disk health monitoring)
-- SSH configured for remote replication
-- GNU coreutils (e.g. `date`, `awk`, `grep`, etc.)
+- Bash ≥ 4.0  
+- ZFS utilities (`zfs`, `zpool`)  
+- `mbuffer` (optional, for streaming sends)  
+- `smartctl` (optional, for SMART disk health checks)  
+- SSH access for remote replication  
+- GNU coreutils (`awk`, `grep`, `date`, etc.)  
 
 ---
 
-## Directory Structure
+## 📁 Directory Structure
 
 ```bash
 zman/
-├── zman.sh # Main entrypoint script
-├── README.md # This file
+├── zman.sh                 # Main entrypoint
+├── install.sh              # Installer
+├── README.md               # This file
 ├── config/
-│ └── default.conf # Optional default pool/dataset config
-├── report/
-│ └── default.conf # Health thresholds, filters
+│   └── default.conf        # Optional default pool/dataset config
 ├── plans/
-│ └── replication.conf # Dataset-based replication definitions
+│   └── replication.conf    # Replication plans per dataset
+├── report/
+│   └── defaults.conf       # Reporting thresholds and filters
 ├── lib/
-│ ├── dataset.sh # Dataset operations
-│ ├── pool.sh # Zpool operations
-│ ├── report.sh # Health and status reporting
-│ ├── replicate.sh # Replication logic
-│ ├── sendrecv.sh # Send/receive logic
-│ ├── snapshot.sh # Snapshot lifecycle
-│ ├── zfs.sh # Shared ZFS helpers
-│ └── zpool.sh # Shared pool helpers
+│   ├── dataset.sh          # Dataset operations
+│   ├── pool.sh             # Zpool operations
+│   ├── report.sh           # Health and status reports
+│   ├── replicate.sh        # Plan-based replication
+│   ├── sendrecv.sh         # Snapshot send/receive logic
+│   ├── snapshot.sh         # Snapshot lifecycle management
+│   ├── zfs.sh              # Common ZFS functions
+│   └── zpool.sh            # Common Zpool functions
 └── utils/
-├── log.sh # Colored logging helpers
-└── validate.sh # Input validation logic
+    ├── log.sh              # Logging helpers
+    └── validate.sh         # Input validation
 ```
 
 ---
 
-## Installation
-
-1. Clone the repository:
+## 🛠 Installation
 
 ```bash
 git clone https://github.com/thegfn/zman.git
@@ -67,84 +67,97 @@ chmod +x install.sh
 ./install.sh
 ```
 
-2. Optionally install `mbuffer` and `smartctl`
+Optional packages:
 
 ```bash
-sudo apt install mbuffer smartmontools     # Debian/Ubuntu
+# Debian/Ubuntu
+sudo apt install mbuffer smartmontools
 
-sudo dnf install mbuffer smartmontools     # Fedora/RHEL
+# Fedora/RHEL
+sudo dnf install mbuffer smartmontools
 ```
 
 ---
 
-## Configuration
+## ⚙️ Configuration
 
-1. Set default zpool and dataset - Optional
+### Default Pool/Dataset (optional)
 
-edit `config/default.conf` and update the values within
+Edit `config/default.conf`:
 
 ```bash
 DEFAULT_POOL="tank"
 DEFAULT_DATASET="tank/data"
 ```
 
-2. Modify default thresholds and reporting preferences - Optional
+### Report Thresholds (optional)
 
-edit `report/defaults.conf` and modify values to your needs
+Edit `report/defaults.conf`:
 
-```bash
-[report]
-capacity_warn_percent=80
-snapshot_age_warn_days=90
-snapshot_count_warn=100
-ignore_disks=sda,sdb
-ignore_pools=backup,testpool
-smart_temp_warn_celsius=50
-smart_realloc_warn=10
+```ini
+# ZMAN Report Defaults
+# Thresholds and ignore filters used in health/reporting module
+
+# Pools to ignore from report checks (comma-separated)
+ignore_pools =
+
+# Disks to ignore from SMART check (comma-separated, e.g., sda,sdb)
+ignore_disks =
+
+# SMART thresholds
+smart_temp_warn_celsius = 50
+smart_realloc_warn = 5
+
+# Capacity warning threshold (percentage)
+capacity_warn_percent = 80
+
+# Snapshot warnings
+snapshot_age_warn_days = 30
+snapshot_count_warn = 50
 ```
 
-3. Define replication targets and policies per dataset - Optional
+### Replication Plans (optional)
 
-edit `plans/replication.conf` and enter your configuraiton
+Edit `plans/replication.conf`:
 
-```bash
+```ini
 [tank/app]
-target=remotehost:/zbackup/app
-retain_days=14
-mbuffer=true
+target = backup@remote:/zbackup/app
+retain_days = 14
+mbuffer = true
+incremental_auto = true
 
 [tank/db]
-target=remotehost:/zbackup/db
-retain_days=7
-mbuffer=false
+target = backup@remote:/zbackup/db
+retain_days = 7
+mbuffer = false
+incremental_auto = true
 ```
 
-## Usage and Examples
+---
 
-### Manage zpools
+## ⚡ Usage and Examples
 
-`zman pool`
+### 🔹 Pool Management
 
 ```bash
 zman pool list
 zman pool status
-zman pool scrub tank
 zman pool create tank mirror sdc sdd
 zman pool destroy tank
+zman pool scrub tank
+zman pool export tank
+zman pool import tank
 zman pool attach tank sde sdf
 zman pool detach tank sdf
 zman pool replace tank sdf sdg
-zman pool export tank
-zman pool import tank
 ```
 
-### Manage ZFS datasets
-
-`zman dataset`
+### 🔹 Dataset Management
 
 ```bash
-zman dataset create tank/mydata compression=zstd
 zman dataset list
+zman dataset create tank/mydata compression=zstd
 zman dataset destroy tank/olddata
 zman dataset set quota=10G tank/mydata
 zman dataset get tank/mydata
@@ -153,96 +166,98 @@ zman dataset clone tank/mydata@daily-2025-07-14 tank/cloned
 zman dataset promote tank/cloned
 ```
 
-## Manage snapshots - create, list, destroy, prune
-
-`zman snapshot`
+### 🔹 Snapshot Management
 
 ```bash
+# Take snapshot
 zman snapshot take --dataset tank/mydata --date
 zman snapshot take --dataset tank/mydata --name pre-upgrade
-zman snapshot list
-zman snapshot destroy tank/mydata snap-old
-zman snapshot prune --dataset tank/mydata --days 14
+
+# Prune snapshots older than 30 days
+zman snapshot prune --dataset tank/mydata --days 30
+
+# Keep only the most recent 10 snapshots
+zman snapshot prune --dataset tank/mydata --keep-last 10
+
+# Dry run
+zman snapshot prune --dataset tank/mydata --keep-last 5 --dry-run
 ```
 
-### Send and Receive snapshots
+---
 
-`zman send`
+## 📤 Snapshot Send/Receive
 
-Send a snapshot to a remote host or local file
+### Send (to remote host or file)
 
 ```bash
-zman send --dataset tank/mydata --snapshot auto-2025-07-15 \
-          --to backup@remote:/backup/data \
+zman send --dataset tank/data --snapshot auto-2025-07-15 \
+          --to backup@remote:/zbackup/data \
           --incremental-auto --mbuffer
 
-zman send --dataset tank/mydata --snapshot auto-2025-07-15 \
-          --to /mnt/usb/data.zfs --compressed
+zman send --dataset tank/data --snapshot auto-2025-07-15 \
+          --to /backups/data-2025-07-15.zfs --compressed
 ```
 
-`zman receive`
-
-Receive a snapshot from a remote system or local file
+### Receive (from remote host or file)
 
 ```bash
-zman receive --dataset tank/mydata \
-             --from backup@remote:/backup/data.zfs --mbuffer
-
-zman receive --dataset tank/mydata \
-             --from /mnt/usb/data.zfs
+zman receive --dataset tank/data --from /backups/data-2025-07-15.zfs
+zman receive --dataset tank/data --from backup@remote:/zbackup/data.zfs --mbuffer
 ```
 
-Send snapshot to remote host to receive from sender
+---
+
+## 🔁 Snapshot Replication Plans
+
+Automated snapshot, send, and prune via `zman replicate`.
+
+### Define Plan
+
+```ini
+[tank/projects]
+target = backups@host:tank/archive/projects
+retain_days = 14
+mbuffer = true
+incremental_auto = true
+```
+
+### Run Replication
 
 ```bash
-zman send \
-  --dataset tank/projects \
-  --snapshot auto-2025-07-15 \
-  --to backup@remote:/zbackup/tank/projects \
-  --incremental-auto \
-  --mbuffer
+zman replicate
 ```
 
-This will:
+ZMAN will:
 
-- Detect the most recent local snapshot before auto-2025-07-15
-- Send incrementally from that base
-- Stream with mbuffer over SSH
-- Pipe directly into zfs receive on the remote
+- Take a new dated snapshot
+- Send it (incrementally if possible)
+- Prune old snapshots based on `retain_days`
 
-Send snapshot to local file for air-gapped receive
+---
+
+## 📊 Reporting & Health Checks
 
 ```bash
-zman send \
-  --dataset tank/secure \
-  --snapshot monthly-2025-07 \
-  --to /mnt/usb/monthly-secure.zfs \
-  --compressed \
-  --incremental-auto
+zman report smart         # Show SMART health summary
+zman report degraded      # List degraded pools or devices
+zman report capacity      # Warn on near-full pools
+zman report snapshots     # Detect excessive or old snapshots
+zman report quota         # Report datasets violating quotas
 ```
 
-This will:
+---
 
-- Use compressed send
-- Automatically use the latest prior snapshot
-- Write the snapshot stream to a local file
-- Useful for air-gapped transfer, cold storage, DR
+## 🔎 Notes
 
-Receive snapshot from local file from air-gapped send
+- Most commands support `--dry-run` to preview actions
+- Logging stored at `/var/log/zman.log`
+- Safety prompts are issued for destructive actions
+- Remote replication assumes SSH access with key authentication
+- `mbuffer` is highly recommended for large or remote data streams
 
-```bash
-zman receive \
-  --dataset tank/secure \
-  --from /mnt/usb/monthly-secure.zfs
-```
+---
 
-#### Notes
+## 👤 Author
 
-- Sender-initiated transfers allow easier orchestration from a backup scheduler (e.g. cron)
-- Use of `mbuffer` is optional but recommended for large datasets or remote streams
-- `--incremental-auto` simplifies scripting by automatically determining a base snapshot
-
-## Author
-
-Created and maintained by **theGFN**
-https://github.com/thegfn
+**theGFN**  
+📦 GitHub: [https://github.com/thegfn](https://github.com/thegfn)
