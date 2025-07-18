@@ -1,5 +1,5 @@
 replicate_from_plan() {
-	if [[ $# -eq 0 || "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+	if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
 		cat <<EOF
 
 Usage: zman replicate [--help]
@@ -26,38 +26,34 @@ Examples:
   zman replicate
   zman replicate --help
 
-  # Sample plan entry:
-  [tank/data/projects]
-  target = backups@backuphost:tank/archive/projects
-  retain_days = 14
-  mbuffer = true
-  incremental_auto = true
-
 EOF
 		return 0
 	fi
-
-	local config="plans/replication.conf"
+        
+	local config="$SCRIPT_DIR/plans/replication.conf"
+	[[ ! -f "$config" ]] && log_error "Replication plan not found: $config" && return 1
 
 	grep '^\[' "$config" | while read -r section; do
-		dataset="${section//[\[\]]/}"
+		local dataset="${section//[\[\]]/}"
 
-		target=$(awk -v s="[$dataset]" '$0==s {found=1; next} /^\[/{found=0} found && /target/ {print $0}' "$config" | cut -d= -f2-)
-		days=$(awk -v s="[$dataset]" '$0==s {found=1; next} /^\[/{found=0} found && /retain_days/ {print $0}' "$config" | cut -d= -f2-)
-		mbuffer_enabled=$(awk -v s="[$dataset]" '$0==s {found=1; next} /^\[/{found=0} found && /mbuffer/ {print $0}' "$config" | cut -d= -f2-)
-		incremental_enabled=$(awk -v s="[$dataset]" '$0==s {found=1; next} /^\[/{found=0} found && /incremental_auto/ {print $0}' "$config" | cut -d= -f2-)
+		local target days mbuffer_enabled incremental_enabled
+		target=$(awk -v s="[$dataset]" '$0==s {found=1; next} /^\[/{found=0} found && /target/ {sub(/^.*= */, "", $0); print $0}' "$config")
+		days=$(awk -v s="[$dataset]" '$0==s {found=1; next} /^\[/{found=0} found && /retain_days/ {sub(/^.*= */, "", $0); print $0}' "$config")
+		mbuffer_enabled=$(awk -v s="[$dataset]" '$0==s {found=1; next} /^\[/{found=0} found && /mbuffer/ {sub(/^.*= */, "", $0); print tolower($0)}' "$config")
+		incremental_enabled=$(awk -v s="[$dataset]" '$0==s {found=1; next} /^\[/{found=0} found && /incremental_auto/ {sub(/^.*= */, "", $0); print tolower($0)}' "$config")
 
-		mbuffer_enabled="${mbuffer_enabled,,}"
-		[[ "$mbuffer_enabled" != "true" ]] && mbuffer_enabled="false"
+		mbuffer_enabled="${mbuffer_enabled:-false}"
+		incremental_enabled="${incremental_enabled:-false}"
 
-		incremental_enabled="${incremental_enabled,,}"
-		[[ "$incremental_enabled" != "true" ]] && incremental_enabled="false"
-
+		local snap_name
 		snap_name="$(date +%F)"
-		zfs snapshot "$dataset@$snap_name"
+		log_info "[$dataset] Creating snapshot $dataset@$snap_name"
+		if ! zfs snapshot "$dataset@$snap_name"; then
+			log_error "[$dataset] Snapshot creation failed"
+			continue
+		fi
 
-		log_info "Replicating $dataset@$snap_name to $target (mbuffer=$mbuffer_enabled, incremental_auto=$incremental_enabled)"
-
+		log_info "[$dataset] Replicating to $target (mbuffer=$mbuffer_enabled, incremental_auto=$incremental_enabled)"
 		cmd=("$SCRIPT_DIR/zman.sh" send
 			--dataset "$dataset"
 			--snapshot "$snap_name"
@@ -67,9 +63,16 @@ EOF
 		[[ "$mbuffer_enabled" == "true" ]] && cmd+=(--mbuffer)
 		[[ "$incremental_enabled" == "true" ]] && cmd+=(--incremental-auto)
 
-		"${cmd[@]}"
+		if ! "${cmd[@]}"; then
+			log_error "[$dataset] Replication failed"
+			continue
+		fi
 
-		log_info "Pruning old snapshots on $dataset older than $days days"
-		"$SCRIPT_DIR/zman.sh" snapshot prune "$dataset" "$days"
+		if [[ -n "$days" ]]; then
+			log_info "[$dataset] Pruning snapshots older than $days days"
+			if ! "$SCRIPT_DIR/zman.sh" snapshot prune --dataset "$dataset" --days "$days"; then
+				log_warn "[$dataset] Snapshot pruning failed"
+			fi
+		fi
 	done
 }

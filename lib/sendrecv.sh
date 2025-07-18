@@ -1,3 +1,5 @@
+# lib/sendrecv.sh
+
 zfs_send_cli() {
 	if [[ $# -eq 0 || "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
 		cat <<EOF
@@ -35,60 +37,46 @@ EOF
 
 	while [[ $# -gt 0 ]]; do
 		case "$1" in
-		--dataset)
-			dataset="$2"
-			shift
-			;;
-		--snapshot)
-			snapshot="$2"
-			shift
-			;;
-		--to)
-			dest="$2"
-			shift
-			;;
-		--dest-dataset)
-			dest_dataset="$2"
-			shift
-			;;
-		--incremental)
-			flags="$flags -i $2"
-			shift
-			;;
-		--incremental-auto) incremental_auto="true" ;;
-		--compressed) flags="$flags -c" ;;
-		--resume-token-file)
-			resume_file="$2"
-			shift
-			;;
-		--mbuffer) use_mbuffer="true" ;;
-		--dry-run)
-			echo "Would send $dataset@$snapshot to $dest using incremental_auto=$incremental_auto mbuffer=$use_mbuffer"
-			return
-			;;
+			--dataset) dataset="$2"; shift ;;
+			--snapshot) snapshot="$2"; shift ;;
+			--to) dest="$2"; shift ;;
+			--dest-dataset) dest_dataset="$2"; shift ;;
+			--incremental) flags="$flags -i $2"; shift ;;
+			--incremental-auto) incremental_auto="true" ;;
+			--compressed) flags="$flags -c" ;;
+			--resume-token-file) resume_file="$2"; shift ;;
+			--mbuffer) use_mbuffer="true" ;;
+			--dry-run)
+				echo "Would send $dataset@$snapshot to $dest using incremental_auto=$incremental_auto mbuffer=$use_mbuffer"
+				return 0
+				;;
 		esac
 		shift
 	done
 
-	[[ -z "$dataset" || -z "$snapshot" || -z "$dest" ]] && log_error "Missing required arguments" && return 1
+	if [[ -z "$dataset" || -z "$snapshot" || -z "$dest" ]]; then
+		log_error "Missing required arguments"
+		return 1
+	fi
 
 	if [[ "$incremental_auto" == "true" ]]; then
 		log_info "Determining previous local snapshot for $dataset before $snapshot"
 
 		local base_snap=""
-		local_snaps=$(zfs list -H -t snapshot -o name | grep "^$dataset@" | cut -d@ -f2 | sort)
+		local_snaps=$(zfs list -H -t snapshot -o name,creation -s creation | awk -v ds="$dataset@" '$1 ~ "^" ds { print $1 }')
 
-		for snap in $local_snaps; do
-			if [[ "$snap" == "$snapshot" ]]; then
+		for full_snap in $local_snaps; do
+			snap_name="${full_snap##*@}"
+			if [[ "$snap_name" == "$snapshot" ]]; then
 				break
 			fi
-			base_snap="$snap"
+			base_snap="$full_snap"
 		done
 
 		if [[ -z "$base_snap" ]]; then
 			log_warn "No prior local snapshot found; falling back to full send"
 		else
-			log_info "Using $base_snap as incremental base"
+			log_info "Using ${base_snap##*@} as incremental base"
 			flags="$flags -i $base_snap"
 		fi
 	fi
@@ -106,14 +94,14 @@ EOF
 			log_info "Sending $dataset@$snapshot to $host:$remote_target using mbuffer"
 			zfs send $flags "$dataset@$snapshot" |
 				mbuffer -q -s 128k -m 1G |
-				ssh "$host" "mbuffer -q -s 128k -m  1G | zfs receive -v $remote_target"
+				ssh "$host" "mbuffer -q -s 128k -m 1G | zfs receive -v $remote_target"
 		else
 			log_info "Sending $dataset@$snapshot to $host:$remote_target without mbuffer"
 			zfs send $flags "$dataset@$snapshot" | ssh "$host" "zfs receive -v $remote_target"
 		fi
 	else
 		log_info "Sending $dataset@$snapshot to local file $dest"
-		zfs send $flags "$dataset@$snapshot" >"$dest"
+		zfs send $flags "$dataset@$snapshot" > "$dest"
 	fi
 }
 
@@ -145,24 +133,21 @@ EOF
 
 	while [[ $# -gt 0 ]]; do
 		case "$1" in
-		--dataset)
-			dataset="$2"
-			shift
-			;;
-		--from)
-			source="$2"
-			shift
-			;;
-		--mbuffer) use_mbuffer="true" ;;
-		--dry-run)
-			echo "Would receive $source into $dataset using mbuffer=$use_mbuffer"
-			return
-			;;
+			--dataset) dataset="$2"; shift ;;
+			--from) source="$2"; shift ;;
+			--mbuffer) use_mbuffer="true" ;;
+			--dry-run)
+				echo "Would receive $source into $dataset using mbuffer=$use_mbuffer"
+				return 0
+				;;
 		esac
 		shift
 	done
 
-	[[ -z "$dataset" || -z "$source" ]] && log_error "Missing required arguments" && return 1
+	if [[ -z "$dataset" || -z "$source" ]]; then
+		log_error "Missing required arguments"
+		return 1
+	fi
 
 	if [[ "$source" == *:* ]]; then
 		local host="${source%%:*}"
@@ -183,6 +168,6 @@ EOF
 		fi
 	else
 		log_info "Receiving from local file $source into $dataset"
-		zfs receive -v "$dataset" <"$source"
+		zfs receive -v "$dataset" < "$source"
 	fi
 }

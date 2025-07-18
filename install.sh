@@ -27,7 +27,12 @@ EOF
 
 sudo chmod +x "$WRAPPER"
 
-# Step 3: Verify
+# Step 3: Logfile setup
+sudo mkdir -p /var/log
+sudo touch /var/log/zman.log
+sudo chmod 644 /var/log/zman.log
+
+# Step 4: Verify
 echo "[INFO] Verifying installation..."
 if command -v zman >/dev/null; then
   echo "[SUCCESS] ZMAN is installed and available as 'zman'"
